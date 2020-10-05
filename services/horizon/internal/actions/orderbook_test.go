@@ -2,16 +2,16 @@ package actions
 
 import (
 	"database/sql"
-	"github.com/stellar/go/services/horizon/internal/db2/history"
-	"github.com/stellar/go/services/horizon/internal/test"
-	"github.com/stretchr/testify/assert"
 	"math"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 
+	"github.com/stellar/go/services/horizon/internal/db2/history"
+	"github.com/stellar/go/services/horizon/internal/test"
+	"github.com/stretchr/testify/assert"
+
 	protocol "github.com/stellar/go/protocols/horizon"
-	"github.com/stellar/go/xdr"
 )
 
 type intObject int
@@ -490,36 +490,82 @@ func TestOrderbookGetResource(t *testing.T) {
 		},
 	}
 
-	sellEurOffer := twoEurOffer
-	sellEurOffer.Buying, sellEurOffer.Selling = sellEurOffer.Selling, sellEurOffer.Buying
-	sellEurOffer.OfferId = 15
+	sellEurOffer := history.Offer{
+		SellerID: seller.Address(),
+		OfferID:  int64(15),
 
-	otherEurOffer := twoEurOffer
-	otherEurOffer.Amount = xdr.Int64(math.MaxInt64)
-	otherEurOffer.OfferId = 16
+		BuyingAsset:  nativeAsset,
+		SellingAsset: eurAsset,
 
-	nonCanonicalPriceTwoEurOffer := twoEurOffer
-	nonCanonicalPriceTwoEurOffer.OfferId = 30
-	// Add a separate offer with the same price value, but
-	// using a non-canonical representation, to make sure
-	// they are coalesced into the same price level
-	nonCanonicalPriceTwoEurOffer.Price.N *= 15
-	nonCanonicalPriceTwoEurOffer.Price.D *= 15
+		Amount:             int64(500),
+		Pricen:             int32(2),
+		Priced:             int32(1),
+		Price:              float64(2),
+		Flags:              2,
+		LastModifiedLedger: uint32(4),
+	}
 
-	threeEurOffer := twoEurOffer
-	threeEurOffer.Price.N = 3
-	threeEurOffer.OfferId = 20
+	otherEurOffer := history.Offer{
+		SellerID: seller.Address(),
+		OfferID:  int64(16),
 
-	sellEurOffer.Price.N = 9
-	sellEurOffer.Price.D = 10
+		BuyingAsset:  eurAsset,
+		SellingAsset: nativeAsset,
 
-	otherSellEurOffer := sellEurOffer
-	otherSellEurOffer.OfferId = 17
-	// sellEurOffer.Price * 2
-	otherSellEurOffer.Price.N = 9
-	otherSellEurOffer.Price.D = 5
+		Amount:             int64(math.MaxInt64),
+		Pricen:             int32(2),
+		Priced:             int32(1),
+		Price:              float64(2),
+		Flags:              2,
+		LastModifiedLedger: uint32(1234),
+	}
 
-	offers := []xdr.OfferEntry{
+	nonCanonicalPriceTwoEurOffer := history.Offer{
+		SellerID: seller.Address(),
+		OfferID:  int64(7),
+
+		BuyingAsset:  eurAsset,
+		SellingAsset: nativeAsset,
+
+		Amount:             int64(500),
+		Pricen:             int32(2 * 15),
+		Priced:             int32(1 * 15),
+		Price:              float64(2),
+		Flags:              2,
+		LastModifiedLedger: uint32(4),
+	}
+
+	threeEurOffer := history.Offer{
+		SellerID: seller.Address(),
+		OfferID:  int64(20),
+
+		BuyingAsset:  eurAsset,
+		SellingAsset: nativeAsset,
+
+		Amount:             int64(500),
+		Pricen:             int32(3),
+		Priced:             int32(1),
+		Price:              float64(3),
+		Flags:              2,
+		LastModifiedLedger: uint32(1234),
+	}
+
+	otherSellEurOffer := history.Offer{
+		SellerID: seller.Address(),
+		OfferID:  int64(17),
+
+		BuyingAsset:  nativeAsset,
+		SellingAsset: eurAsset,
+
+		Amount:             int64(500),
+		Pricen:             int32(5),
+		Priced:             int32(9),
+		Price:              float64(5) / float64(9),
+		Flags:              2,
+		LastModifiedLedger: uint32(1234),
+	}
+
+	offers := []history.Offer{
 		twoEurOffer,
 		otherEurOffer,
 		nonCanonicalPriceTwoEurOffer,
@@ -531,8 +577,8 @@ func TestOrderbookGetResource(t *testing.T) {
 	assert.NoError(t, q.TruncateTables([]string{"offers"}))
 
 	batch := q.NewOffersBatchInsertBuilder(0)
-	for i, offer := range offers {
-		assert.NoError(t, batch.Add(offer, xdr.Uint32(i+1)))
+	for _, offer := range offers {
+		assert.NoError(t, batch.Add(offer))
 	}
 	assert.NoError(t, batch.Exec())
 
@@ -545,25 +591,25 @@ func TestOrderbookGetResource(t *testing.T) {
 	fullResponse := empty
 	fullResponse.Asks = []protocol.PriceLevel{
 		{
-			PriceR: protocol.Price{N: int32(twoEurOffer.Price.N), D: int32(twoEurOffer.Price.D)},
+			PriceR: protocol.Price{N: int32(twoEurOffer.Pricen), D: int32(twoEurOffer.Priced)},
 			Price:  "2.0000000",
 			Amount: "922337203685.4776807",
 		},
 		{
-			PriceR: protocol.Price{N: int32(threeEurOffer.Price.N), D: int32(threeEurOffer.Price.D)},
+			PriceR: protocol.Price{N: int32(threeEurOffer.Pricen), D: int32(threeEurOffer.Priced)},
 			Price:  "3.0000000",
 			Amount: "0.0000500",
 		},
 	}
 	fullResponse.Bids = []protocol.PriceLevel{
 		{
-			PriceR: protocol.Price{N: int32(sellEurOffer.Price.D), D: int32(sellEurOffer.Price.N)},
-			Price:  "1.1111111",
+			PriceR: protocol.Price{N: int32(otherSellEurOffer.Priced), D: int32(otherSellEurOffer.Pricen)},
+			Price:  "1.8000000",
 			Amount: "0.0000500",
 		},
 		{
-			PriceR: protocol.Price{N: int32(otherSellEurOffer.Price.D), D: int32(otherSellEurOffer.Price.N)},
-			Price:  "0.5555556",
+			PriceR: protocol.Price{N: int32(sellEurOffer.Priced), D: int32(sellEurOffer.Pricen)},
+			Price:  "0.5000000",
 			Amount: "0.0000500",
 		},
 	}
@@ -571,15 +617,15 @@ func TestOrderbookGetResource(t *testing.T) {
 	limitResponse := empty
 	limitResponse.Asks = []protocol.PriceLevel{
 		{
-			PriceR: protocol.Price{N: int32(twoEurOffer.Price.N), D: int32(twoEurOffer.Price.D)},
+			PriceR: protocol.Price{N: int32(twoEurOffer.Pricen), D: int32(twoEurOffer.Priced)},
 			Price:  "2.0000000",
 			Amount: "922337203685.4776807",
 		},
 	}
 	limitResponse.Bids = []protocol.PriceLevel{
 		{
-			PriceR: protocol.Price{N: int32(sellEurOffer.Price.D), D: int32(sellEurOffer.Price.N)},
-			Price:  "1.1111111",
+			PriceR: protocol.Price{N: int32(otherSellEurOffer.Priced), D: int32(otherSellEurOffer.Pricen)},
+			Price:  "1.8000000",
 			Amount: "0.0000500",
 		},
 	}

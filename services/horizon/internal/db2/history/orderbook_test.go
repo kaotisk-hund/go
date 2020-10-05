@@ -2,11 +2,11 @@ package history
 
 import (
 	"database/sql"
-	"github.com/stellar/go/services/horizon/internal/test"
-	"github.com/stellar/go/xdr"
-	"github.com/stretchr/testify/assert"
 	"math"
 	"testing"
+
+	"github.com/stellar/go/services/horizon/internal/test"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGetOrderBookSummaryRequiresTransaction(t *testing.T) {
@@ -31,55 +31,91 @@ func TestGetOrderBookSummary(t *testing.T) {
 	test.ResetHorizonDB(t, tt.HorizonDB)
 	q := &Q{tt.HorizonSession()}
 
-	asksButNoBids := []xdr.OfferEntry{twoEurOffer}
+	asksButNoBids := []Offer{twoEurOffer}
 	asksButNoBidsResponse := OrderBookSummary{
 		Asks: []PriceLevel{
 			{
-				Pricen: int32(twoEurOffer.Price.N),
-				Priced: int32(twoEurOffer.Price.D),
+				Pricen: int32(twoEurOffer.Pricen),
+				Priced: int32(twoEurOffer.Priced),
 				Pricef: "2.0000000",
 				Amount: "0.0000500",
 			},
 		},
 	}
 
-	sellEurOffer := twoEurOffer
-	sellEurOffer.Buying, sellEurOffer.Selling = sellEurOffer.Selling, sellEurOffer.Buying
-	sellEurOffer.OfferId = 15
-	bidsButNoAsks := []xdr.OfferEntry{sellEurOffer}
+	sellEurOffer := Offer{
+		SellerID: twoEurOfferSeller.Address(),
+		OfferID:  int64(15),
+
+		BuyingAsset:  nativeAsset,
+		SellingAsset: eurAsset,
+
+		Amount:             int64(500),
+		Pricen:             int32(2),
+		Priced:             int32(1),
+		Price:              float64(2),
+		Flags:              2,
+		LastModifiedLedger: uint32(1234),
+	}
+
+	bidsButNoAsks := []Offer{sellEurOffer}
 	bidsButNoAsksResponse := OrderBookSummary{
 		Bids: []PriceLevel{
 			{
-				Pricen: int32(sellEurOffer.Price.D),
-				Priced: int32(sellEurOffer.Price.N),
+				Pricen: int32(sellEurOffer.Priced),
+				Priced: int32(sellEurOffer.Pricen),
 				Pricef: "0.5000000",
 				Amount: "0.0000500",
 			},
 		},
 	}
 
-	otherEurOffer := twoEurOffer
-	otherEurOffer.Amount = xdr.Int64(math.MaxInt64)
-	otherEurOffer.OfferId = 16
+	otherEurOffer := Offer{
+		SellerID: twoEurOfferSeller.Address(),
+		OfferID:  int64(6),
 
-	nonCanonicalPriceTwoEurOffer := twoEurOffer
-	nonCanonicalPriceTwoEurOffer.OfferId = 30
-	// Add a separate offer with the same price value, but
-	// using a non-canonical representation, to make sure
-	// they are coalesced into the same price level
-	nonCanonicalPriceTwoEurOffer.Price.N *= 15
-	nonCanonicalPriceTwoEurOffer.Price.D *= 15
+		BuyingAsset:  eurAsset,
+		SellingAsset: nativeAsset,
 
-	sellEurOffer.Price.N = 9
-	sellEurOffer.Price.D = 10
+		Amount:             int64(math.MaxInt64),
+		Pricen:             int32(2),
+		Priced:             int32(1),
+		Price:              float64(2),
+		Flags:              2,
+		LastModifiedLedger: uint32(1234),
+	}
 
-	otherSellEurOffer := sellEurOffer
-	otherSellEurOffer.OfferId = 17
-	// sellEurOffer.Price * 2
-	otherSellEurOffer.Price.N = 9
-	otherSellEurOffer.Price.D = 5
+	nonCanonicalPriceTwoEurOffer := Offer{
+		SellerID: twoEurOfferSeller.Address(),
+		OfferID:  int64(30),
 
-	fullOffers := []xdr.OfferEntry{
+		BuyingAsset:  eurAsset,
+		SellingAsset: nativeAsset,
+
+		Amount:             int64(500),
+		Pricen:             int32(2 * 15),
+		Priced:             int32(1 * 15),
+		Price:              float64(2),
+		Flags:              2,
+		LastModifiedLedger: uint32(1234),
+	}
+
+	otherSellEurOffer := Offer{
+		SellerID: twoEurOfferSeller.Address(),
+		OfferID:  int64(17),
+
+		BuyingAsset:  nativeAsset,
+		SellingAsset: eurAsset,
+
+		Amount:             int64(500),
+		Pricen:             int32(9),
+		Priced:             int32(5),
+		Price:              float64(9) / float64(5),
+		Flags:              2,
+		LastModifiedLedger: uint32(1234),
+	}
+
+	fullOffers := []Offer{
 		twoEurOffer,
 		otherEurOffer,
 		nonCanonicalPriceTwoEurOffer,
@@ -91,29 +127,29 @@ func TestGetOrderBookSummary(t *testing.T) {
 	fullResponse := OrderBookSummary{
 		Asks: []PriceLevel{
 			{
-				Pricen: int32(twoEurOffer.Price.N),
-				Priced: int32(twoEurOffer.Price.D),
+				Pricen: int32(twoEurOffer.Pricen),
+				Priced: int32(twoEurOffer.Priced),
 				Pricef: "2.0000000",
 				Amount: "922337203685.4776807",
 			},
 			{
-				Pricen: int32(threeEurOffer.Price.N),
-				Priced: int32(threeEurOffer.Price.D),
+				Pricen: int32(threeEurOffer.Pricen),
+				Priced: int32(threeEurOffer.Priced),
 				Pricef: "3.0000000",
 				Amount: "0.0000500",
 			},
 		},
 		Bids: []PriceLevel{
 			{
-				Pricen: int32(sellEurOffer.Price.D),
-				Priced: int32(sellEurOffer.Price.N),
-				Pricef: "1.1111111",
+				Pricen: int32(otherSellEurOffer.Priced),
+				Priced: int32(otherSellEurOffer.Pricen),
+				Pricef: "0.5555556",
 				Amount: "0.0000500",
 			},
 			{
-				Pricen: int32(otherSellEurOffer.Price.D),
-				Priced: int32(otherSellEurOffer.Price.N),
-				Pricef: "0.5555556",
+				Pricen: int32(sellEurOffer.Priced),
+				Priced: int32(sellEurOffer.Pricen),
+				Pricef: "0.5000000",
 				Amount: "0.0000500",
 			},
 		},
@@ -122,17 +158,17 @@ func TestGetOrderBookSummary(t *testing.T) {
 	limitResponse := OrderBookSummary{
 		Asks: []PriceLevel{
 			{
-				Pricen: int32(twoEurOffer.Price.N),
-				Priced: int32(twoEurOffer.Price.D),
+				Pricen: int32(twoEurOffer.Pricen),
+				Priced: int32(twoEurOffer.Priced),
 				Pricef: "2.0000000",
 				Amount: "922337203685.4776807",
 			},
 		},
 		Bids: []PriceLevel{
 			{
-				Pricen: int32(sellEurOffer.Price.D),
-				Priced: int32(sellEurOffer.Price.N),
-				Pricef: "1.1111111",
+				Pricen: int32(otherSellEurOffer.Priced),
+				Priced: int32(otherSellEurOffer.Pricen),
+				Pricef: "0.5555556",
 				Amount: "0.0000500",
 			},
 		},
@@ -140,13 +176,13 @@ func TestGetOrderBookSummary(t *testing.T) {
 
 	for _, testCase := range []struct {
 		name     string
-		offers   []xdr.OfferEntry
+		offers   []Offer
 		limit    int
 		expected OrderBookSummary
 	}{
 		{
 			"empty orderbook",
-			[]xdr.OfferEntry{},
+			[]Offer{},
 			10,
 			OrderBookSummary{},
 		},
@@ -179,8 +215,8 @@ func TestGetOrderBookSummary(t *testing.T) {
 			assert.NoError(t, q.TruncateTables([]string{"offers"}))
 
 			batch := q.NewOffersBatchInsertBuilder(0)
-			for i, offer := range testCase.offers {
-				assert.NoError(t, batch.Add(offer, xdr.Uint32(i+1)))
+			for _, offer := range testCase.offers {
+				assert.NoError(t, batch.Add(offer))
 			}
 			assert.NoError(t, batch.Exec())
 
@@ -203,18 +239,30 @@ func TestGetOrderBookSummaryExcludesRemovedOffers(t *testing.T) {
 	test.ResetHorizonDB(t, tt.HorizonDB)
 	q := &Q{tt.HorizonSession()}
 
-	sellEurOffer := twoEurOffer
-	sellEurOffer.Buying, sellEurOffer.Selling = sellEurOffer.Selling, sellEurOffer.Buying
-	sellEurOffer.OfferId = 15
-	offers := []xdr.OfferEntry{
+	sellEurOffer := Offer{
+		SellerID: twoEurOfferSeller.Address(),
+		OfferID:  int64(15),
+
+		BuyingAsset:  nativeAsset,
+		SellingAsset: eurAsset,
+
+		Amount:             int64(500),
+		Pricen:             int32(2),
+		Priced:             int32(1),
+		Price:              float64(2),
+		Flags:              2,
+		LastModifiedLedger: uint32(1234),
+	}
+
+	offers := []Offer{
 		twoEurOffer,
 		threeEurOffer,
 		sellEurOffer,
 	}
 
 	batch := q.NewOffersBatchInsertBuilder(0)
-	for i, offer := range offers {
-		assert.NoError(t, batch.Add(offer, xdr.Uint32(i+1)))
+	for _, offer := range offers {
+		assert.NoError(t, batch.Add(offer))
 	}
 	assert.NoError(t, batch.Exec())
 
@@ -232,7 +280,7 @@ func TestGetOrderBookSummaryExcludesRemovedOffers(t *testing.T) {
 
 	for i, offer := range offers {
 		var count int64
-		count, err = q.RemoveOffer(offer.OfferId, uint32(i+2))
+		count, err = q.RemoveOffer(offer.OfferID, uint32(i+2))
 		assert.NoError(t, err)
 		assert.Equal(t, int64(1), count)
 	}

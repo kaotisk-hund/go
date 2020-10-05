@@ -52,19 +52,27 @@ func (s *OffersProcessorTestSuiteState) TestCreateOffer() {
 		Price:    xdr.Price{1, 2},
 	}
 	lastModifiedLedgerSeq := xdr.Uint32(123)
-	s.mockBatchInsertBuilder.
-		On("Add", offer, lastModifiedLedgerSeq).Return(nil).Once()
+	entry := xdr.LedgerEntry{
+		Data: xdr.LedgerEntryData{
+			Type:  xdr.LedgerEntryTypeOffer,
+			Offer: &offer,
+		},
+		LastModifiedLedgerSeq: lastModifiedLedgerSeq,
+	}
+
+	s.mockBatchInsertBuilder.On("Add", history.Offer{
+		SellerID:           "GC3C4AKRBQLHOJ45U4XG35ESVWRDECWO5XLDGYADO6DPR3L7KIDVUMML",
+		OfferID:            1,
+		Pricen:             int32(1),
+		Priced:             int32(2),
+		Price:              float64(0.5),
+		LastModifiedLedger: uint32(lastModifiedLedgerSeq),
+	}).Return(nil).Once()
 
 	err := s.processor.ProcessChange(io.Change{
 		Type: xdr.LedgerEntryTypeOffer,
 		Pre:  nil,
-		Post: &xdr.LedgerEntry{
-			Data: xdr.LedgerEntryData{
-				Type:  xdr.LedgerEntryTypeOffer,
-				Offer: &offer,
-			},
-			LastModifiedLedgerSeq: lastModifiedLedgerSeq,
-		},
+		Post: &entry,
 	})
 	s.Assert().NoError(err)
 }
@@ -142,6 +150,14 @@ func (s *OffersProcessorTestSuiteLedger) setupInsertOffer() {
 		Price:    xdr.Price{1, 6},
 	}
 
+	updatedEntry := xdr.LedgerEntry{
+		LastModifiedLedgerSeq: lastModifiedLedgerSeq,
+		Data: xdr.LedgerEntryData{
+			Type:  xdr.LedgerEntryTypeOffer,
+			Offer: &updatedOffer,
+		},
+	}
+
 	err = s.processor.ProcessChange(io.Change{
 		Type: xdr.LedgerEntryTypeOffer,
 		Pre: &xdr.LedgerEntry{
@@ -151,22 +167,19 @@ func (s *OffersProcessorTestSuiteLedger) setupInsertOffer() {
 				Offer: &offer,
 			},
 		},
-		Post: &xdr.LedgerEntry{
-			LastModifiedLedgerSeq: lastModifiedLedgerSeq,
-			Data: xdr.LedgerEntryData{
-				Type:  xdr.LedgerEntryTypeOffer,
-				Offer: &updatedOffer,
-			},
-		},
+		Post: &updatedEntry,
 	})
 	s.Assert().NoError(err)
 
 	// We use LedgerEntryChangesCache so all changes are squashed
-	s.mockBatchInsertBuilder.On(
-		"Add",
-		updatedOffer,
-		lastModifiedLedgerSeq,
-	).Return(nil).Once()
+	s.mockBatchInsertBuilder.On("Add", history.Offer{
+		SellerID:           "GC3C4AKRBQLHOJ45U4XG35ESVWRDECWO5XLDGYADO6DPR3L7KIDVUMML",
+		OfferID:            2,
+		Pricen:             int32(1),
+		Priced:             int32(6),
+		Price:              float64(1) / float64(6),
+		LastModifiedLedger: uint32(lastModifiedLedgerSeq),
+	}).Return(nil).Once()
 
 	s.mockBatchInsertBuilder.On("Exec").Return(nil).Once()
 }
@@ -210,6 +223,14 @@ func (s *OffersProcessorTestSuiteLedger) TestUpdateOfferNoRowsAffected() {
 		Price:    xdr.Price{1, 6},
 	}
 
+	updatedEntry := xdr.LedgerEntry{
+		LastModifiedLedgerSeq: lastModifiedLedgerSeq,
+		Data: xdr.LedgerEntryData{
+			Type:  xdr.LedgerEntryTypeOffer,
+			Offer: &updatedOffer,
+		},
+	}
+
 	err := s.processor.ProcessChange(io.Change{
 		Type: xdr.LedgerEntryTypeOffer,
 		Pre: &xdr.LedgerEntry{
@@ -219,21 +240,18 @@ func (s *OffersProcessorTestSuiteLedger) TestUpdateOfferNoRowsAffected() {
 				Offer: &offer,
 			},
 		},
-		Post: &xdr.LedgerEntry{
-			LastModifiedLedgerSeq: lastModifiedLedgerSeq,
-			Data: xdr.LedgerEntryData{
-				Type:  xdr.LedgerEntryTypeOffer,
-				Offer: &updatedOffer,
-			},
-		},
+		Post: &updatedEntry,
 	})
 	s.Assert().NoError(err)
 
-	s.mockQ.On(
-		"UpdateOffer",
-		updatedOffer,
-		lastModifiedLedgerSeq,
-	).Return(int64(0), nil).Once()
+	s.mockQ.On("UpdateOffer", history.Offer{
+		SellerID:           "GC3C4AKRBQLHOJ45U4XG35ESVWRDECWO5XLDGYADO6DPR3L7KIDVUMML",
+		OfferID:            2,
+		Pricen:             int32(1),
+		Priced:             int32(6),
+		Price:              float64(1) / float64(6),
+		LastModifiedLedger: uint32(lastModifiedLedgerSeq),
+	}).Return(int64(0), nil).Once()
 
 	err = s.processor.Commit()
 	s.Assert().Error(err)
@@ -258,11 +276,7 @@ func (s *OffersProcessorTestSuiteLedger) TestRemoveOffer() {
 	})
 	s.Assert().NoError(err)
 
-	s.mockQ.On(
-		"RemoveOffer",
-		xdr.Int64(3),
-		s.sequence,
-	).Return(int64(1), nil).Once()
+	s.mockQ.On("RemoveOffer", int64(3), s.sequence).Return(int64(1), nil).Once()
 
 	s.mockBatchInsertBuilder.On("Exec").Return(nil).Once()
 	s.mockQ.On("CompactOffers", s.sequence-100).Return(int64(0), nil).Once()
@@ -296,6 +310,14 @@ func (s *OffersProcessorTestSuiteLedger) TestProcessUpgradeChange() {
 		Price:    xdr.Price{1, 6},
 	}
 
+	updatedEntry := xdr.LedgerEntry{
+		LastModifiedLedgerSeq: lastModifiedLedgerSeq,
+		Data: xdr.LedgerEntryData{
+			Type:  xdr.LedgerEntryTypeOffer,
+			Offer: &updatedOffer,
+		},
+	}
+
 	err = s.processor.ProcessChange(io.Change{
 		Type: xdr.LedgerEntryTypeOffer,
 		Pre: &xdr.LedgerEntry{
@@ -305,22 +327,19 @@ func (s *OffersProcessorTestSuiteLedger) TestProcessUpgradeChange() {
 				Offer: &offer,
 			},
 		},
-		Post: &xdr.LedgerEntry{
-			LastModifiedLedgerSeq: lastModifiedLedgerSeq,
-			Data: xdr.LedgerEntryData{
-				Type:  xdr.LedgerEntryTypeOffer,
-				Offer: &updatedOffer,
-			},
-		},
+		Post: &updatedEntry,
 	})
 	s.Assert().NoError(err)
 
 	// We use LedgerEntryChangesCache so all changes are squashed
-	s.mockBatchInsertBuilder.On(
-		"Add",
-		updatedOffer,
-		lastModifiedLedgerSeq,
-	).Return(nil).Once()
+	s.mockBatchInsertBuilder.On("Add", history.Offer{
+		SellerID:           "GC3C4AKRBQLHOJ45U4XG35ESVWRDECWO5XLDGYADO6DPR3L7KIDVUMML",
+		OfferID:            2,
+		Pricen:             int32(1),
+		Priced:             int32(6),
+		Price:              float64(1) / float64(6),
+		LastModifiedLedger: uint32(lastModifiedLedgerSeq),
+	}).Return(nil).Once()
 
 	s.mockBatchInsertBuilder.On("Exec").Return(nil).Once()
 	s.mockQ.On("CompactOffers", s.sequence-100).Return(int64(0), nil).Once()
@@ -344,11 +363,7 @@ func (s *OffersProcessorTestSuiteLedger) TestRemoveOfferNoRowsAffected() {
 	})
 	s.Assert().NoError(err)
 
-	s.mockQ.On(
-		"RemoveOffer",
-		xdr.Int64(3),
-		s.sequence,
-	).Return(int64(0), nil).Once()
+	s.mockQ.On("RemoveOffer", int64(3), s.sequence).Return(int64(0), nil).Once()
 
 	err = s.processor.Commit()
 	s.Assert().Error(err)
